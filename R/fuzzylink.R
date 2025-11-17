@@ -17,6 +17,7 @@
 #' @param return_all_pairs If TRUE, returns *every* within-block record pair from dfA and dfB, not just validated pairs. Defaults to FALSE.
 #' @param embedding_port_num The port number that the local embedding model is running on. Defaults to 8080. 
 #' @param text_gen_port_num The port number that the local text generation model is running on. Defaults to 8081. 
+#' @param save_embeddings TRUE to save the embeddings to <embedding_model>_embeddings.RData. Defaults to FALSE.
 #' @param debug TRUE to print various statments throughout the code to track progess. Defaults to FALSE.
 #'
 #' @return A dataframe with all rows of `dfA` joined with any matches from `dfB`
@@ -48,16 +49,13 @@ fuzzylink <- function(dfA, dfB,
                       return_all_pairs = FALSE,
                       embedding_port_num = 8080,
                       text_gen_port_num = 8081,
-                      # name = NULL, #The 'name' of this run for saving intermediate files. Defaults to the name of the model + embedding_model
+                      save_embeddings = FALSE,
                       debug = FALSE){
 
   # Check for errors in inputs
   if(debug){
     print("DEBUG: Beginning to check for errors in inputs")
   }
-  # if(is.null(name)) {
-  #   name <- paste(model, embedding_model, sep='_')
-  # }
 
   if(is.null(dfA[[by]])){
     stop("There is no variable called \'", by, "\' in dfA.")
@@ -131,7 +129,11 @@ fuzzylink <- function(dfA, dfB,
                                port_number = embedding_port_num,
                                debug = debug)
 
-  
+  if(save_embeddings) {
+    current_directory <- getwd()
+    embedding_filename <- paste(embedding_model,"embeddings.RData", sep='_')
+    save(embeddings, file = paste0(current_directory, "/", embedding_filename))
+  }
 
   ## Step 2: Get similarity matrix within each block ------------
   if(debug){
