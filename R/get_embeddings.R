@@ -3,6 +3,9 @@
 #' @description
 #' Get pretrained text embeddings from the OpenAI or Mistral API. Automatically batches requests to handle rate limits.
 #'
+#' @param dfA,dfB A pair of data frames or data frame extensions (e.g. tibbles)
+#' @param by A character denoting the name of the variable to use for fuzzy matching
+#' @param verbose TRUE to print progress updates, FALSE for no output
 #' @param text A character vector
 #' @param model Which embedding model to use. Defaults to 'text-embedding-3-large'. Set to "EMPTY" to run locally.
 #' @param dimensions The dimension of the embedding vectors to return. Defaults to 256. Note that the 'mistral-embed' model will always return 1024 vectors.
@@ -21,8 +24,7 @@
 #' embeddings['dog',] |> dot(embeddings['canine',])
 #' embeddings['dog',] |> dot(embeddings['feline',])
 #' }
-get_embeddings <- function(text,
-                           model = 'text-embedding-3-large',
+get_embeddings <- function(dfA, dfB, by, verbose, model = 'text-embedding-3-large',
                            dimensions = 256,
                            openai_api_key = Sys.getenv("OPENAI_API_KEY"),
                            parallel = TRUE,
@@ -30,8 +32,18 @@ get_embeddings <- function(text,
                            debug = FALSE) {
 
   if(debug){
-    print("DEBUG: get_embeddings function started")
+    print("DEBUG: BEGINNING STEP 1: GETTING EMBEDDINGS ------------------------------------")
   }
+
+  all_strings <- unique(c(dfA[[by]], dfB[[by]]))
+  if(verbose){
+    message('Retrieving ',
+        prettyNum(length(all_strings), big.mark = ','),
+        ' embeddings (',
+        format(Sys.time(), '%X'),
+        ')\n\n', sep = '')
+  }
+  text <- all_strings
 
   if (model== "EMPTY") {
     if(debug){
@@ -86,12 +98,6 @@ get_embeddings <- function(text,
     split_indices <- cumulative_length %/% max_characters
     # Split the vector based on the calculated indices
     chunks <- split(text, split_indices)
-
-
-
-
-
-
 
 
   } else if (model == 'mistral-embed') {
