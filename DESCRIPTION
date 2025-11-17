@@ -1,4 +1,4 @@
-Package: BLfuzzylink
+Package: BFfuzzylink
 Title: Probabilistic Record Linkage Using Pretrained Text Embeddings
 Version: 0.2.5
 Authors@R: 
