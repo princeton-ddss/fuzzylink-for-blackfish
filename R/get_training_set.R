@@ -14,7 +14,7 @@
 #' @param openai_api_key Your OpenAI API key. By default, looks for a system environment variable called "OPENAI_API_KEY" (recommended option). Otherwise, it will prompt you to enter the API key as an argument.
 #' @param parallel TRUE to submit API requests in parallel. Setting to FALSE can reduce rate limit errors at the expense of longer runtime.
 #'
-#' @return The training dataset
+#' @return A dataset with string pairs `A` and `B`, along with a `match` column indicating whether they match.
 #'
 get_training_set <- function(sim, num_bins = 50, samples_per_bin = 10, n = 500,
                              record_type = 'entity',

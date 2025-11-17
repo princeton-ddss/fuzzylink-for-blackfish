@@ -17,7 +17,6 @@
 #' @param return_all_pairs If TRUE, returns *every* within-block record pair from dfA and dfB, not just validated pairs. Defaults to FALSE.
 #' @param embedding_port_num The port number that the local embedding model is running on. Defaults to 8080. 
 #' @param text_gen_port_num The port number that the local text generation model is running on. Defaults to 8081. 
-#' @param save_embeddings TRUE to save the intermediate embeddings. Defaults to FALSE.
 #' @param debug TRUE to print various statments throughout the code to track progess. Defaults to FALSE.
 #'
 #' @return A dataframe with all rows of `dfA` joined with any matches from `dfB`
@@ -49,7 +48,6 @@ fuzzylink <- function(dfA, dfB,
                       return_all_pairs = FALSE,
                       embedding_port_num = 8080,
                       text_gen_port_num = 8081,
-                      save_embeddings = FALSE,
                       # name = NULL, #The 'name' of this run for saving intermediate files. Defaults to the name of the model + embedding_model
                       debug = FALSE){
 
@@ -91,19 +89,41 @@ fuzzylink <- function(dfA, dfB,
   }
 
   ## Step 0: Blocking -----------------
-  blocked <- block_data(dfA = dfA,
-                       dfB = dfB,
-                       blocking.variables = blocking.variables,
-                       debug = debug)
-  dfB <- blocked$dfB
-  blocks <- blocked$blocks
+  if(debug){
+    print("DEBUG: BEGINNING STEP 0: BLOCKING ----------------------------------------------")
+  }
+
+  if(!is.null(blocking.variables)){
+
+    # get every unique combination of blocking variables in dfA
+    blocks <- unique(dfA[,blocking.variables,drop = FALSE])
+
+    # keep only the rows in dfB with exact matches on the blocking variables
+    dfB <- dplyr::inner_join(dfB, blocks,
+                             by = blocking.variables)
+
+    if(nrow(dfB) == 0){
+      stop("There are no exact matches in dfB on the blocking.variables specified.")
+    }
+
+  } else{
+    blocks <- data.frame(block = 1)
+  }
 
   ## Step 1: Get embeddings ----------------
+  if(debug){
+    print("DEBUG: BEGINNING STEP 1: GETTING EMBEDDINGS ------------------------------------")
+  }
 
-  embeddings <- get_embeddings(dfA = dfA,
-                               dfB = dfB,
-                               by = by,
-                               verbose = verbose,
+  all_strings <- unique(c(dfA[[by]], dfB[[by]]))
+  if(verbose){
+    message('Retrieving ',
+        prettyNum(length(all_strings), big.mark = ','),
+        ' embeddings (',
+        format(Sys.time(), '%X'),
+        ')\n\n', sep = '')
+  }
+  embeddings <- get_embeddings(all_strings,
                                model = embedding_model,
                                dimensions = embedding_dimensions,
                                openai_api_key = openai_api_key,
@@ -114,77 +134,420 @@ fuzzylink <- function(dfA, dfB,
   
 
   ## Step 2: Get similarity matrix within each block ------------
-  
-  sim <- get_similarity_matrix_per_block(dfA = dfA,
-                                        dfB = dfB,
-                                        by = by,
-                                        verbose = verbose,
-                                        blocking.variables = blocking.variables,
-                                        blocks = blocks,
-                                        embeddings = embeddings,
-                                        debug = debug)
+  if(debug){
+    print("DEBUG: BEGINNING STEP 2: GETTING SIMILARITY MATRICES ---------------------------")
+  }
+
+  if(verbose){
+    message('Computing similarity matrix (',
+        format(Sys.time(), '%X'),
+        ')\n\n', sep = '')
+  }
+  sim <- list()
+  for(i in 1:nrow(blocks)){
+
+    if(!is.null(blocking.variables)){
+
+      # if(verbose){
+      #   message('Block ', i, ' of ', nrow(blocks), ':\n', sep = '')
+      #   print(data.frame(blocks[i,]))
+      #   message('\n')
+      # }
+
+      # subset the data for each block from dfA and dfB
+      subset_A <- mapply(`==`,
+                         dfA[, blocking.variables,drop=FALSE],
+                         blocks[i,]) |>
+        apply(1, all)
+      block_A <- dfA[subset_A, ]
+
+      subset_B <- mapply(`==`,
+                         dfB[, blocking.variables,drop=FALSE],
+                         blocks[i,]) |>
+        apply(1, all)
+      block_B <- dfB[subset_B, ]
+
+      # if you can't find any matches in dfA or dfB, go to the next block
+      if(nrow(block_A) == 0 | nrow(block_B) == 0){
+        sim[[i]] <- NA
+        next
+      }
+
+    } else{
+      # if not blocking, compute similarity matrix for all dfA and dfB
+      block_A <- dfA
+      block_B <- dfB
+    }
+
+    # get a unique list of strings in each dataset
+    strings_A <- unique(block_A[[by]])
+    strings_B <- unique(block_B[[by]])
+
+    # compute cosine similarity matrix
+    sim[[i]] <- get_similarity_matrix(embeddings, strings_A, strings_B)
+  }
 
   ## Step 3: Label Training Set -------------
+  if(debug){
+    print("DEBUG: BEGINNING STEP 3: LABELLING TRAINING SET --------------------------------")
+  }
 
-  training <- label_training_set(dfA = dfA, dfB = dfB, 
-                              verbose = verbose, by = by,
-                              blocking.variables = blocking.variables,
-                              record_type = record_type,
-                              instructions = instructions,
-                              model = model,
-                              openai_api_key = openai_api_key,
-                              parallel = parallel,
-                              text_gen_port_num = text_gen_port_num,
-                              learner = learner,
-                              sim = sim,
-                              debug = debug)
+  if(verbose){
+    message('Labeling Initial Training Set (',
+        format(Sys.time(), '%X'),
+        ')\n\n', sep = '')
+  }
 
-  train <- training$train
-  num_exact <- training$num_exact
-  df <- training$df
- 
+  # df is the dataset of all within-block name pairs
+  df <- reshape2::melt(sim)
+  # rename columns
+  namekey <- c(Var1 = 'A', Var2 = 'B', value = 'sim', L1 = 'block')
+  names(df) <- namekey[names(df)]
+  df <- dplyr::filter(df, !is.na(sim))
+  df$A <- as.character(df$A)
+  df$B <- as.character(df$B)
+
+  # add lexical string distance measures
+  df$jw <- stringdist::stringsim(tolower(df$A), tolower(df$B),
+                                 method = 'jw', p = 0.1)
+
+  # if using random forest as supervised learner, append full suite of
+  # lexical string distance measures
+  if(learner == 'ranger'){
+    df$osa = stringdist::stringdist(tolower(df$A), tolower(df$B), method = "osa")
+    df$cosine = stringdist::stringdist(tolower(df$A), tolower(df$B), method = "cosine")
+    df$jaccard = stringdist::stringdist(tolower(df$A), tolower(df$B), method = "jaccard")
+    df$lcs = stringdist::stringdist(tolower(df$A), tolower(df$B), method = "lcs")
+    df$qgram = stringdist::stringdist(tolower(df$A), tolower(df$B), method = "qgram")
+    df$soundex = stringdist::stringdist(tolower(df$A), tolower(df$B), method = "soundex")
+  }
+
+  # the 'train' dataset removes duplicate A/B pairs
+  train <- df |>
+    dplyr::distinct(A, B, .keep_all = TRUE)
+
+  # omit exact matches from the train set during active learning loop
+  num_exact <- sum(train$A == train$B)
+  if(num_exact > 0){
+    train_exact <- train[train$A == train$B,]
+    train_exact$match <- 'Yes'
+    train_exact$match_probability <- 1
+    train <- train[train$A != train$B,]
+  }
+
+  # label initial training set (n_t=500)
+  train$match <- NA
+  n_t <- 500
+  k <- max(floor(n_t / length(unique(train$A))), 1)
+  pairs_to_label <- train |>
+    # create index number
+    dplyr::mutate(index = dplyr::row_number()) |>
+    # get the k largest sim values in each group
+    dplyr::group_by(A) |>
+    dplyr::slice_max(sim, n = k) |>
+    dplyr::ungroup() |>
+    # only keep n_t record pairs
+    dplyr::slice_sample(n = n_t) |>
+    dplyr::pull(index)
+
+    if (debug) {
+      print("train$match originally:")
+      print( "The unique values in the table: ")
+      print(unique(train$match))
+      print("count occurances:")
+      print(train$match, useNA = "ifany")
+      print("structure:")
+      print(str(train$match))
+    }
+
+  train$match[pairs_to_label] <- check_match(
+    train$A[pairs_to_label],
+    train$B[pairs_to_label],
+    record_type = record_type,
+    instructions = instructions,
+    model = model,
+    openai_api_key = openai_api_key,
+    parallel = parallel,
+    port_number = text_gen_port_num,
+    debug = debug
+  )
+
+  if (debug) {
+      print("train$match sfter check_match:")
+      print( "The unique values in the table: ")
+      print(unique(train$match))
+      print("count occurances:")
+      print(train$match, useNA = "ifany")
+      print("structure:")
+      print(str(train$match))
+    }
+
+  # train <- get_training_set(sim, record_type = record_type,
+  #                           instructions = instructions,
+  #                           model = model, openai_api_key = openai_api_key,
+  #                           parallel = parallel)
+
   ## Step 4: Fit model -------------------
+  if(debug){
+    print("DEBUG: BEGINNING STEP 4: FITTING MODEL -----------------------------------------")
+  }
 
-  fit <- fit_model(verbose = verbose,
-                    learner = learner,
-                    fmla = fmla,
-                    train = train,
-                    sim = sim,
-                    debug = debug)
+  
+  if(verbose){
+    if(debug){
+      print("DEBUG: verbose")
+    }
+    message('Fitting model (',
+        format(Sys.time(), '%X'),
+        ')\n\n', sep = '')
+  }
+  
+  if(learner == 'ranger'){
+    if(debug){
+      print("DEBUG: learner == ranger")
+    }
+    fit <- ranger::ranger(x = train |>
+                            dplyr::filter(match %in% c('Yes', 'No')) |>
+                            dplyr::select(sim, jw:soundex),
+                          y = factor(train$match[train$match %in% c('Yes', 'No')]),
+                          probability = TRUE)
+  } else{
+    if(debug){
+      print("DEBUG: learner != ranger")
+    }
+    if (debug) {
+      print( "The unique values in the table: ")
+      print(unique(train$match))
+      print("count occurances:")
+      print(train$match, useNA = "ifany")
+      print("structure:")
+      print(str(train$match))
+    }
+
+    fit <- stats::glm(fmla,
+                      data = train |>
+                        dplyr::filter(match %in% c('Yes', 'No')) |>
+                        dplyr::mutate(match = as.numeric(match == 'Yes')),
+                      family = 'binomial')
+  }
+
+
 
   # Step 5: Active Learning Loop ---------------
+  if(debug){
+    print("DEBUG: BEGINNING STEP 5: ACTIVE LEARNING LOOP --------------------------------------")
+  }
 
-  trained <- active_learning_loop(learner = learner,
-                                  verbose = verbose,
-                                  train = train,
-                                  fmla = fmla,
-                                  fit = fit,
-                                  record_type = record_type,
-                                  instructions = instructions,
-                                  model = model,
-                                  openai_api_key = openai_api_key,
-                                  parallel = parallel ,
-                                  text_gen_port_num = text_gen_port_num,
-                                  sim = sim,
-                                  debug = debug)
-  train <- trained$train
-  fit <- trained$fit
+  i <- 1
+  window_size <- 5
+  gradient_estimate <- 0
+  stop_threshold <- 0.01
+  kernel_sd <- 0.2
+  batch_size <- 100
+  stop_condition_met <- FALSE
+  if(learner == 'ranger'){
+    stop_threshold <- 0.1
+    train$match_probability <- stats::predict(fit, train)$predictions[,'Yes']
+  } else{
+    train$match_probability <- stats::predict.glm(fit, train, type = 'response')
+  }
+
+
+  while(!stop_condition_met){
+
+    if(verbose){
+      message('Refining Model ',
+          i, ' (',
+          format(Sys.time(), '%X'),
+          ')\n\n', sep = '')
+    }
+
+    # Gaussian kernel
+    log_odds <- stats::qlogis(train$match_probability)
+    p_draw <- ifelse(is.na(train$match),
+                     stats::dnorm(log_odds, mean = 0, sd = kernel_sd),
+                     0)
+    if(sum(p_draw > 0) == 0){
+      break
+    }
+
+    pairs_to_label <- sample(
+      1:nrow(train),
+      size = ifelse(sum(p_draw > 0) < batch_size, sum(p_draw > 0), batch_size),
+      replace = FALSE,
+      prob = p_draw
+    )
+
+    # add the labels to the dataset
+    train$match[pairs_to_label] <- check_match(
+      train$A[pairs_to_label],
+      train$B[pairs_to_label],
+      record_type = record_type,
+      instructions = instructions,
+      model = model,
+      openai_api_key = openai_api_key,
+      parallel = parallel,
+      port_number = text_gen_port_num,
+      debug = debug
+    )
+
+    # refit the model and re-estimate match probabilities
+    old_probs <- train$match_probability
+    if(learner == 'ranger'){
+      fit <- ranger::ranger(x = train |>
+                              dplyr::filter(match %in% c('Yes', 'No')) |>
+                              dplyr::select(sim, jw:soundex),
+                            y = factor(train$match[train$match %in% c('Yes', 'No')]),
+                            probability = TRUE)
+      train$match_probability <- stats::predict(fit, train)$predictions[,'Yes']
+      # for RF, only estimate gradient on out-of-sample observations
+      gradient_estimate[i] <- max(abs(old_probs - train$match_probability)[is.na(train$match)])
+    } else{
+      fit <- stats::glm(fmla,
+                        data = train |>
+                          dplyr::filter(match %in% c('Yes', 'No')) |>
+                          dplyr::mutate(match = as.numeric(match == 'Yes')),
+                        family = 'binomial')
+
+      train$match_probability <- stats::predict.glm(fit, train, type = 'response')
+      gradient_estimate[i] <- max(abs(old_probs - train$match_probability))
+    }
+
+
+
+    if(i >= window_size){
+      if(mean(gradient_estimate[(i-window_size+1):i]) < stop_threshold){
+        stop_condition_met <- TRUE
+      }
+    }
+
+    i <- i + 1
+  }
 
   ## Step 6: Recall Search -----------------
+  if(debug){
+    print("DEBUG: BEGINNING STEP 6: RECALL SEARCH -----------------------------------------")
+  }
 
-  df <- recall_search(df = df,
-                      learner = learner,
-                      verbose = verbose,
-                      record_type = record_type,
-                      instructions = instructions,
-                      model = model,
-                      openai_api_key = openai_api_key,
-                      parallel = parallel,
-                      text_gen_port_num = text_gen_port_num,
-                      fit = fit,
-                      num_exact = num_exact,
-                      train = train,
-                      debug = debug)
+  # 1. Identify records in A without in-block matches from B
+  # 2. Sample from kernel in batches of 100; label but do not update model.
+  # Loop 1-2 until either there are no remaining record pairs to label or you've hit
+  # user-specified label maximum
+
+  # return the cutoff that maximizes expected F-score
+  get_cutoff <- function(df, fit){
+    df <- df[order(df$match_probability),]
+    df$expected_false_negatives <- cumsum(df$match_probability)
+    df$identified_false_negatives <- cumsum(ifelse(is.na(df$match), 0, as.numeric(df$match == 'Yes')))
+    df <- df[order(-df$match_probability),]
+    df$expected_false_positives <- cumsum(1-df$match_probability)
+    df$identified_false_positives <- cumsum(1 - ifelse(is.na(df$match), 1, as.numeric(df$match == 'Yes')))
+    df$expected_true_positives <- cumsum(df$match_probability)
+    df$identified_true_positives <- cumsum(ifelse(is.na(df$match), 0, as.numeric(df$match == 'Yes')))
+
+    total_labeled_true <- sum(df$match == 'Yes', na.rm = TRUE)
+
+    df$tp <- total_labeled_true + (df$expected_true_positives - df$identified_true_positives)
+    df$fp <- df$expected_false_positives - df$identified_false_positives
+    df$fn <- df$expected_false_negatives - df$identified_false_negatives
+
+    df$expected_recall <- df$tp / (df$tp + df$fn)
+    df$expected_precision <- df$tp / (df$tp + df$fp)
+    df$expected_f1 = 2 * (df$expected_recall * df$expected_precision) /
+      (df$expected_recall + df$expected_precision)
+
+    return(df$match_probability[which.max(df$expected_f1)])
+  }
+
+  # add the exact matches back to train before remerging with df
+  if(num_exact > 0){
+    train <- dplyr::bind_rows(train_exact, train)
+  }
+
+  df <- df |>
+    # merge with labels from train set
+    dplyr::left_join(train |>
+                       dplyr::select(A, B, match),
+                     by = c('A', 'B'))
+
+  if(learner == 'ranger'){
+    df$match_probability <- stats::predict(fit, df)$predictions[,'Yes']
+  } else{
+    df$match_probability <- stats::predict.glm(fit, df, type = 'response')
+  }
+
+  # for exact matches, match_probability = 1
+  df$match_probability <- ifelse(df$A == df$B, 1, df$match_probability)
+
+  stop_condition_met <- FALSE
+  while(!stop_condition_met){
+
+    # find all records in A with no within-block matches
+    # and return any unlabeled record pairs
+    cutoff <- get_cutoff(df, fit)
+    to_search <- df |>
+      dplyr::group_by(A, block) |>
+      dplyr::filter(sum(match == 'Yes' | match_probability > cutoff,
+                        na.rm = TRUE) == 0) |>
+      dplyr::filter(is.na(match)) |>
+      dplyr::distinct(A, B, .keep_all = TRUE) |>
+      dplyr::ungroup()
+
+    if(nrow(to_search) == 0){
+      break
+    }
+
+    # Gaussian kernel
+    p_draw <- stats::dnorm(stats::qlogis(to_search$match_probability),
+                      mean = 0,
+                      sd = kernel_sd)
+    if(sum(p_draw > 0) == 0){
+      break
+    }
+
+    remaining_budget <- max_labels - sum(!is.na(df$match))
+    if(verbose){
+      message(paste0('Record Pairs Remaining To Label: ',
+                 prettyNum(min(remaining_budget, sum(p_draw>0)),
+                           big.mark = ','),
+                 '\n\n'))
+    }
+
+
+    pairs_to_label <- sample(
+      1:nrow(to_search),
+      size = ifelse(sum(p_draw > 0) < batch_size, sum(p_draw > 0), batch_size),
+      replace = FALSE,
+      prob = p_draw
+    )
+
+    # add the labels to the dataset
+    to_search$match[pairs_to_label] <- check_match(
+      to_search$A[pairs_to_label],
+      to_search$B[pairs_to_label],
+      record_type = record_type,
+      instructions = instructions,
+      model = model,
+      openai_api_key = openai_api_key,
+      parallel = parallel,
+      port_number = text_gen_port_num,
+      debug = debug
+    )
+
+    # merge into df, updating match values where they differ
+    to_search <- dplyr::select(to_search, A, B, match)
+    df <- df |>
+      dplyr::left_join(to_search,
+                       by = c("A", "B"),
+                       suffix = c(".1", ".2")) |>
+      dplyr::mutate(match = dplyr::coalesce(match.1, match.2)) |>
+      dplyr::select(-match.1, -match.2)
+
+    # check if stopping condition has been met
+    if(sum(!is.na(df$match)) >= max_labels){
+      stop_condition_met <- TRUE
+    }
+  }
 
   ## Step 7: Return Linked Datasets -----------------
   if(debug){
