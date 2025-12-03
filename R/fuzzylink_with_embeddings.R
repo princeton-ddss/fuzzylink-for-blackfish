@@ -1,6 +1,8 @@
-#' Probabilistic Record Linkage Using Pretrained Text Embeddings
-#'
+#' Probabilistic Record Linkage Using Pretrained Text Embeddings with embeddings already found
+
+
 #' @param dfA,dfB A pair of data frames or data frame extensions (e.g. tibbles)
+#' @param embeddings The embeddings of dfA and dfB
 #' @param by A character denoting the name of the variable to use for fuzzy matching
 #' @param blocking.variables A character vector of variables that must match exactly in order to match two records
 #' @param verbose TRUE to print progress updates, FALSE for no output
@@ -8,140 +10,86 @@
 #' @param instructions A string containing additional instructions to include in the LLM prompt during validation.
 #' @param model Which LLM to prompt when validating matches; defaults to 'gpt-4o-2024-11-20	'. Set to "EMPTY" to run locally.
 #' @param openai_api_key Your OpenAI API key. By default, looks for a system environment variable called "OPENAI_API_KEY" (recommended option). Otherwise, it will prompt you to enter the API key as an argument.
-#' @param embedding_dimensions The dimension of the embedding vectors to retrieve. Defaults to 256
-#' @param embedding_model Which pretrained embedding model to use; defaults to 'text-embedding-3-large' (OpenAI), but will also accept 'mistral-embed' (Mistral). Set to "EMPTY" to run locally.
 #' @param learner Which supervised learner should be used to predict match probabilities. Defaults to logistic regression ('glm'), but will also accept random forest ('ranger').
 #' @param fmla By default, logistic regression model predicts whether two records match as a linear combination of embedding similarity and Jaro-Winkler similarity (`match ~ sim + jw`). Change this input for alternate specifications.
 #' @param max_labels The maximum number of LLM prompts to submit when labeling record pairs. Defaults to 10,000
 #' @param parallel TRUE to submit API requests in parallel. Setting to FALSE can reduce rate limit errors at the expense of longer runtime.
 #' @param return_all_pairs If TRUE, returns *every* within-block record pair from dfA and dfB, not just validated pairs. Defaults to FALSE.
-#' @param embedding_port_num The port number that the local embedding model is running on. Defaults to 8080. 
 #' @param text_gen_port_num The port number that the local text generation model is running on. Defaults to 8081. 
-#' @param save_embeddings TRUE to save the embeddings to <embedding_model>_embeddings.RData. Defaults to FALSE.
-#' @param just_embeddings TRUE to quit running the code after aquiring the embeddings. Defaults to FALSE
 #' @param debug TRUE to print various statments throughout the code to track progess. Defaults to FALSE.
-#'
+#' 
 #' @return A dataframe with all rows of `dfA` joined with any matches from `dfB`
 #' @export
-#'
-#' @examples
-#' \dontrun{
-#' dfA <- data.frame(state.x77)
-#' dfA$name <- rownames(dfA)
-#' dfB <- data.frame(name = state.abb, state.division)
-#' df <- fuzzylink(dfA, dfB,
-#'                 by = 'name',
-#'                 record_type = 'US state government',
-#'                 instructions = 'The second dataset contains US postal codes.')
-#' }
-fuzzylink <- function(dfA, dfB,
-                      by, blocking.variables = NULL,
-                      verbose = TRUE,
-                      record_type = 'entity',
-                      instructions = NULL,
-                      model = 'gpt-4o-2024-11-20',
-                      openai_api_key = Sys.getenv('OPENAI_API_KEY'),
-                      embedding_dimensions = 256,
-                      embedding_model = 'text-embedding-3-large',
-                      learner = 'glm',
-                      fmla = match ~ sim + jw,
-                      max_labels = 1e4,
-                      parallel = TRUE,
-                      return_all_pairs = FALSE,
-                      embedding_port_num = 8080,
-                      text_gen_port_num = 8081,
-                      save_embeddings = FALSE,
-                      just_embeddings = FALSE,
-                      debug = FALSE){
 
-  # Check for errors in inputs
-  if(debug){
-    print("DEBUG: Beginning to check for errors in inputs")
-  }
+fuzzylink_with_embeddings <- function(dfA, dfB,
+                                embeddings,
+                                by, blocking.variables = NULL,
+                                verbose = TRUE,
+                                record_type = 'entity',
+                                instructions = NULL,
+                                model = 'gpt-4o-2024-11-20',
+                                openai_api_key = Sys.getenv('OPENAI_API_KEY'),
+                                learner = 'glm',
+                                fmla = match ~ sim + jw,
+                                max_labels = 1e4,
+                                parallel = TRUE,
+                                return_all_pairs = FALSE,
+                                text_gen_port_num = 8081,
+                                debug = FALSE){
 
-  if(is.null(dfA[[by]])){
-    stop("There is no variable called \'", by, "\' in dfA.")
-  }
-  if(is.null(dfB[[by]])){
-    stop("There is no variable called \'", by, "\' in dfB.")
-  }
-  if(openai_api_key == ''){
-    if(model != "EMPTY") {
-      stop("No API key for model detected in system environment. You can enter it manually using the 'openai_api_key' argument.")
-    }
-    if(embedding_model != "EMPTY") {
-      stop("No API key for embedding detected in system environment. You can enter it manually using the 'openai_api_key' argument.")
-    }
-  }
-  missing_dfA <- sum(!stats::complete.cases(dfA[,c(by, blocking.variables), drop = FALSE]))
-  if(missing_dfA > 0){
-    warning('Dropping ', missing_dfA, ' observation(s) with missing values from dfA.')
-    dfA <- dfA[stats::complete.cases(dfA[, c(by,blocking.variables), drop = FALSE]), ]
-  }
-  missing_dfB <- sum(!stats::complete.cases(dfB[,c(by, blocking.variables), drop = FALSE]))
-  if(missing_dfB > 0){
-    warning('Dropping ', missing_dfB, ' observation(s) with missing values from dfB.')
-    dfB <- dfB[stats::complete.cases(dfB[, c(by,blocking.variables), drop = FALSE]), ]
-  }
- 
- if(debug){
-    print("DEBUG: No errors found in inputs")
-  }
-
-  ## Step 0: Blocking -----------------
-  if(debug){
-    print("DEBUG: BEGINNING STEP 0: BLOCKING ----------------------------------------------")
-  }
-
-  if(!is.null(blocking.variables)){
-
-    # get every unique combination of blocking variables in dfA
-    blocks <- unique(dfA[,blocking.variables,drop = FALSE])
-
-    # keep only the rows in dfB with exact matches on the blocking variables
-    dfB <- dplyr::inner_join(dfB, blocks,
-                             by = blocking.variables)
-
-    if(nrow(dfB) == 0){
-      stop("There are no exact matches in dfB on the blocking.variables specified.")
+    # Check for errors in inputs
+    if(debug){
+        print("DEBUG: Beginning to check for errors in inputs")
     }
 
-  } else{
-    blocks <- data.frame(block = 1)
-  }
+    if(is.null(dfA[[by]])){
+        stop("There is no variable called \'", by, "\' in dfA.")
+    }
+    if(is.null(dfB[[by]])){
+        stop("There is no variable called \'", by, "\' in dfB.")
+    }
+    if(openai_api_key == ''){
+        if(model != "EMPTY") {
+            stop("No API key for model detected in system environment. You can enter it manually using the 'openai_api_key' argument.")
+        }
+    }
+    missing_dfA <- sum(!stats::complete.cases(dfA[,c(by, blocking.variables), drop = FALSE]))
+    if(missing_dfA > 0){
+        warning('Dropping ', missing_dfA, ' observation(s) with missing values from dfA.')
+        dfA <- dfA[stats::complete.cases(dfA[, c(by,blocking.variables), drop = FALSE]), ]
+    }
+    missing_dfB <- sum(!stats::complete.cases(dfB[,c(by, blocking.variables), drop = FALSE]))
+    if(missing_dfB > 0){
+        warning('Dropping ', missing_dfB, ' observation(s) with missing values from dfB.')
+        dfB <- dfB[stats::complete.cases(dfB[, c(by,blocking.variables), drop = FALSE]), ]
+    }
 
-  ## Step 1: Get embeddings ----------------
-  if(debug){
-    print("DEBUG: BEGINNING STEP 1: GETTING EMBEDDINGS ------------------------------------")
-  }
 
-  all_strings <- unique(c(dfA[[by]], dfB[[by]]))
-  if(verbose){
-    message('Retrieving ',
-        prettyNum(length(all_strings), big.mark = ','),
-        ' embeddings (',
-        format(Sys.time(), '%X'),
-        ')\n\n', sep = '')
-  }
-  embeddings <- get_embeddings(all_strings,
-                               model = embedding_model,
-                               dimensions = embedding_dimensions,
-                               openai_api_key = openai_api_key,
-                               parallel = parallel,
-                               port_number = embedding_port_num,
-                               debug = debug)
+    ## Step 0: Blocking -----------------
+    if(debug){
+        print("DEBUG: BEGINNING STEP 0: BLOCKING ----------------------------------------------")
+    }
 
-  if(save_embeddings) {
-    current_directory <- getwd()
-    embedding_filename <- paste(embedding_model,"embeddings.RData", sep='_')
-    save(embeddings, file = paste0(current_directory, "/", embedding_filename))
-  }
+    if(!is.null(blocking.variables)){
 
-  if(just_embeddings) {
-    return(embeddings)
-  }
+        # get every unique combination of blocking variables in dfA
+        blocks <- unique(dfA[,blocking.variables,drop = FALSE])
 
-  ## Step 2: Get similarity matrix within each block ------------
+        # keep only the rows in dfB with exact matches on the blocking variables
+        dfB <- dplyr::inner_join(dfB, blocks,
+                                by = blocking.variables)
+
+        if(nrow(dfB) == 0){
+        stop("There are no exact matches in dfB on the blocking.variables specified.")
+        }
+
+    } else{
+        blocks <- data.frame(block = 1)
+    }
+
+    # step 1: get embeddings is covered
+
+    ## Step 2: Get similarity matrix within each block ------------
   if(debug){
     print("DEBUG: BEGINNING STEP 2: GETTING SIMILARITY MATRICES ---------------------------")
   }
