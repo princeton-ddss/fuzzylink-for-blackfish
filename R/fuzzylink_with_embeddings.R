@@ -1,4 +1,5 @@
 #' Probabilistic Record Linkage Using Pretrained Text Embeddings with embeddings already found
+#' This code is almost identical to the fuzzylink code, but does not get the embeddings--these are passed as a parameter
 
 
 #' @param dfA,dfB A pair of data frames or data frame extensions (e.g. tibbles)
