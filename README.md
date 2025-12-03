@@ -76,8 +76,8 @@ Or you can install the development version from
 devtools::install_github("joeornstein/fuzzylink")
 ```
 
-You will also need API access to a large language model (LLM). The
-`fuzzylink` package currently supports both OpenAI and Mistral LLMs, but
+You will also need API access to a large language model (LLM) if using closed-source models. The
+`fuzzylink` package currently supports OpenAI, Mistral, and locally running LLMs, but
 will default to using OpenAI unless specified by the user.
 
 ### OpenAI
@@ -110,6 +110,10 @@ into the following line of R code:
     mistral_api_key('YOUR API KEY GOES HERE', install = TRUE)
 
 Now you’re all set up!
+
+### Locally Running Models
+
+If you are running models locally, you just need to set the models to `EMPTY` when calling fuzzylink. You will also need to provide a valid port number(s) for the embedding model and/or the LLM. 
 
 ## Example
 
@@ -168,12 +172,14 @@ whenever the model fit is *too* perfect.)
   defaults to OpenAI’s ‘gpt-4o’, but for simpler problems, you can try
   ‘gpt-3.5-turbo-instruct’, which will significantly reduce cost and
   runtime. If you prefer an open-source language model, try
-  ‘open-mixtral-8x22b’.
+  ‘open-mixtral-8x22b’. If you are running the model locally, use 'EMPTY'; you will also need to provide the port number with `text_gen_port_num`.
 
 - The `embedding_model` argument specifies which pretrained text
   embeddings to use when modeling match probability. It defaults to
   OpenAI’s ‘text-embedding-3-large’, but will also accept
-  ‘text-embedding-3-small’ or Mistral’s ‘mistral-embed’.
+  ‘text-embedding-3-small’ or Mistral’s ‘mistral-embed’. If you are running the model locally, use 'EMPTY'; you will also need to provide the port number with `embedding_port_num`.
+
+- The `save_embeddings` argument can be set to TRUE if you wish to save the generated embeddings in a .RData file--this file will be saved in your working directory.
 
 - Several parameters—including `p`, `k`, `embedding_dimensions`,
   `max_validations`, and `parallel`—are for advanced users who wish to
