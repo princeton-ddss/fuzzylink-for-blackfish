@@ -147,11 +147,17 @@ check_match <- function(string1, string2,
     if(debug){
       print("DEBUG: non-legacy model detected")
     }
+<<<<<<< HEAD
     # function to return a chat prompt formatted as a list of lists
     format_chat_prompt <- function(i){
       if(debug){
         print(" DEBUG: format_chat_prompt in check_match running")
       }
+=======
+    chat <- ellmer::chat_openai('Respond with "Yes" or "No".',
+                                model = model,
+                                credentials = function(){openai_api_key})
+>>>>>>> 393fbc22f6329fa04e0b7be6a43ba0338d4cbb79
 
       p <- list()
       p[[1]] <- list(role = 'system',

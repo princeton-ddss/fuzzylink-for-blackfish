@@ -2,7 +2,8 @@
 % Please edit documentation in R/fuzzylink_with_embeddings.R
 \name{fuzzylink_with_embeddings}
 \alias{fuzzylink_with_embeddings}
-\title{Probabilistic Record Linkage Using Pretrained Text Embeddings with embeddings already found}
+\title{Probabilistic Record Linkage Using Pretrained Text Embeddings with embeddings already found
+This code is almost identical to the fuzzylink code, but does not get the embeddings--these are passed as a parameter}
 \usage{
 fuzzylink_with_embeddings(
   dfA,
@@ -62,4 +63,5 @@ A dataframe with all rows of \code{dfA} joined with any matches from \code{dfB}
 }
 \description{
 Probabilistic Record Linkage Using Pretrained Text Embeddings with embeddings already found
+This code is almost identical to the fuzzylink code, but does not get the embeddings--these are passed as a parameter
 }
