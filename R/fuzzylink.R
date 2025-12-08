@@ -19,6 +19,7 @@
 #' @param text_gen_port_num The port number that the local text generation model is running on. Defaults to 8081. 
 #' @param save_embeddings TRUE to save the embeddings to <embedding_model>_embeddings.RData. Defaults to FALSE.
 #' @param just_embeddings TRUE to quit running the code after aquiring the embeddings. Defaults to FALSE
+#' @param provided_embeddings The embeddings df if using previously computed embeddings. If NULL, embeddings will be calculated
 #' @param debug TRUE to print various statments throughout the code to track progess. Defaults to FALSE.
 #'
 #' @return A dataframe with all rows of `dfA` joined with any matches from `dfB`
@@ -52,6 +53,7 @@ fuzzylink <- function(dfA, dfB,
                       text_gen_port_num = 8081,
                       save_embeddings = FALSE,
                       just_embeddings = FALSE,
+                      provided_embeddings = NULL,
                       debug = FALSE){
 
   # Check for errors in inputs
@@ -111,36 +113,42 @@ fuzzylink <- function(dfA, dfB,
   }
 
   ## Step 1: Get embeddings ----------------
-  if(debug){
-    print("DEBUG: BEGINNING STEP 1: GETTING EMBEDDINGS ------------------------------------")
-  }
 
-  all_strings <- unique(c(dfA[[by]], dfB[[by]]))
-  if(verbose){
-    message('Retrieving ',
-        prettyNum(length(all_strings), big.mark = ','),
-        ' embeddings (',
-        format(Sys.time(), '%X'),
-        ')\n\n', sep = '')
-  }
-  embeddings <- get_embeddings(all_strings,
-                               model = embedding_model,
-                               dimensions = embedding_dimensions,
-                               openai_api_key = openai_api_key,
-                               parallel = parallel,
-                               port_number = embedding_port_num,
-                               debug = debug)
+  if(is.null(provided_embeddings)) {
+    print("calculating embeddings")
+    if(debug){
+      print("DEBUG: BEGINNING STEP 1: GETTING EMBEDDINGS ------------------------------------")
+    }
 
-  if(save_embeddings) {
-    current_directory <- getwd()
-    embedding_filename <- paste(embedding_model,"embeddings.RData", sep='_')
-    save(embeddings, file = paste0(current_directory, "/", embedding_filename))
-  }
+    all_strings <- unique(c(dfA[[by]], dfB[[by]]))
+    if(verbose){
+      message('Retrieving ',
+          prettyNum(length(all_strings), big.mark = ','),
+          ' embeddings (',
+          format(Sys.time(), '%X'),
+          ')\n\n', sep = '')
+    }
+    embeddings <- get_embeddings(all_strings,
+                                model = embedding_model,
+                                dimensions = embedding_dimensions,
+                                openai_api_key = openai_api_key,
+                                parallel = parallel,
+                                port_number = embedding_port_num,
+                                debug = debug)
 
-  if(just_embeddings) {
-    return(embeddings)
-  }
+    if(save_embeddings) {
+      current_directory <- getwd()
+      embedding_filename <- paste(embedding_model,"embeddings.RData", sep='_')
+      save(embeddings, file = paste0(current_directory, "/", embedding_filename))
+    }
 
+    if(just_embeddings) {
+      return(embeddings)
+    }
+  } else {
+    print("using provided embeddings")
+    embeddings <- provided_embeddings
+  }
   ## Step 2: Get similarity matrix within each block ------------
   if(debug){
     print("DEBUG: BEGINNING STEP 2: GETTING SIMILARITY MATRICES ---------------------------")

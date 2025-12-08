@@ -88,12 +88,6 @@ get_embeddings <- function(text,
     chunks <- split(text, split_indices)
 
 
-
-
-
-
-
-
   } else if (model == 'mistral-embed') {
     if(debug){
       print("DEBUG: minstral embedding model detected")

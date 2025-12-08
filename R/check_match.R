@@ -54,10 +54,6 @@ check_match <- function(string1, string2,
 
 
 
-
-
-
-
   # use the Completions endpoint if the model is a "Legacy" model
   if(model %in% c('gpt-3.5-turbo-instruct', 'davinci-002', 'babbage-002')){
     if(debug){
@@ -251,8 +247,10 @@ check_match <- function(string1, string2,
       
       # requests per minute
       rpm <- as.numeric(httr2::resp_header(resp, 'x-ratelimit-limit-requests'))
+
       # tokens per minute
       tpm <- as.numeric(httr2::resp_header(resp, 'x-ratelimit-limit-tokens'))
+
     }
 
     # format prompts
@@ -261,9 +259,11 @@ check_match <- function(string1, string2,
       print("DEBUG: THE PROMPTS:")
       print(prompt_list)
     }
-
+    # print(length(prompt_list))
+    # print(prompt_list[1])
     # format a list of requests
     reqs <- lapply(prompt_list, format_request)
+
     #Map(f = format_request, prompt = prompt_list)
 
     # 1. break up reqs into chunks of size tpm
@@ -275,7 +275,7 @@ check_match <- function(string1, string2,
       if(debug) {
         print("DEBUG: sumbitting prompts in parallel option 1")
       }
-      resps <- httr2::req_perform_parallel(reqs, max_active = 20)
+      resps <- httr2::req_perform_parallel(reqs, max_active = 10)
       if(debug) {
         print("DEBUG: Submitting the prompts")
         print(resps)
