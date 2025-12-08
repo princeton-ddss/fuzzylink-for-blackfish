@@ -25,6 +25,7 @@ fuzzylink(
   text_gen_port_num = 8081,
   save_embeddings = FALSE,
   just_embeddings = FALSE,
+  provided_embeddings = NULL,
   debug = FALSE
 )
 }
@@ -66,6 +67,8 @@ fuzzylink(
 \item{save_embeddings}{TRUE to save the embeddings to <embedding_model>_embeddings.RData. Defaults to FALSE.}
 
 \item{just_embeddings}{TRUE to quit running the code after aquiring the embeddings. Defaults to FALSE}
+
+\item{provided_embeddings}{The embeddings df if using previously computed embeddings. If NULL, embeddings will be calculated}
 
 \item{debug}{TRUE to print various statments throughout the code to track progess. Defaults to FALSE.}
 }

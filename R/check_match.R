@@ -255,12 +255,7 @@ check_match <- function(string1, string2,
 
     # format prompts
     prompt_list <- lapply(1:length(string1), format_chat_prompt)
-    if(debug) {
-      print("DEBUG: THE PROMPTS:")
-      print(prompt_list)
-    }
-    # print(length(prompt_list))
-    # print(prompt_list[1])
+
     # format a list of requests
     reqs <- lapply(prompt_list, format_request)
 
@@ -272,18 +267,8 @@ check_match <- function(string1, string2,
 
     # submit prompts in parallel (20 concurrent requests per host seems to be the optimum)
     if(parallel & stringr::str_detect(model, 'mistral|mixtral', negate = TRUE)){
-      if(debug) {
-        print("DEBUG: sumbitting prompts in parallel option 1")
-      }
-      resps <- httr2::req_perform_parallel(reqs, max_active = 10)
-      if(debug) {
-        print("DEBUG: Submitting the prompts")
-        print(resps)
-      }
+      resps <- httr2::req_perform_parallel(reqs, max_active = 2)
     } else{
-      if(debug) {
-        print("DEBUG: sumbitting prompts in parallel option 2")
-      }
       resps <- reqs |>
         lapply(httr2::req_throttle, rate = rpm / 60) |>
         httr2::req_perform_sequential()
@@ -294,24 +279,12 @@ check_match <- function(string1, string2,
       lapply(httr2::resp_body_string) |>
       lapply(jsonlite::fromJSON, flatten=TRUE)
 
-    if(debug){
-      print("       THE PARSED RESPONSES:")
-      print(parsed)
-    }
-
     # get the labels associated with the highest returned log probability
     if(model %in% c('o3-mini', 'o1', 'o1-mini')){
       labels <- sapply(parsed, function(x) x$choices$message.content)
     } else{
       labels <- sapply(parsed, function(x) x$choices$logprobs.content[[1]]$top_logprobs[[1]][1,]$token)
     }
-
-  }
-
-  if(debug){
-    print(print("       THE LABELS:"))
-    print(labels)
-    print("DEBUG: check_match function completed. Returning.")
   }
 
   return(labels)
