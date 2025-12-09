@@ -10,8 +10,7 @@ get_embeddings(
   dimensions = 256,
   openai_api_key = Sys.getenv("OPENAI_API_KEY"),
   parallel = TRUE,
-  port_number = 8080,
-  debug = FALSE
+  port_number = 8080
 )
 }
 \arguments{
@@ -26,8 +25,6 @@ get_embeddings(
 \item{parallel}{TRUE to submit API requests in parallel. Setting to FALSE can reduce rate limit errors at the expense of longer runtime.}
 
 \item{port_number}{The port number that the local embedding model is running on. Defaults to 8080.}
-
-\item{debug}{TRUE to print various statments throughout the code to track progess. Defaults to FALSE.}
 }
 \value{
 A matrix of embedding vectors (one per row).
