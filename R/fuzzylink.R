@@ -20,7 +20,6 @@
 #' @param save_embeddings TRUE to save the embeddings to <embedding_model>_embeddings.RData. Defaults to FALSE.
 #' @param just_embeddings TRUE to quit running the code after aquiring the embeddings. Defaults to FALSE
 #' @param provided_embeddings The embeddings df if using previously computed embeddings. If NULL, embeddings will be calculated
-#' @param debug TRUE to print various statments throughout the code to track progess. Defaults to FALSE.
 #'
 #' @return A dataframe with all rows of `dfA` joined with any matches from `dfB`
 #' @export
@@ -53,13 +52,9 @@ fuzzylink <- function(dfA, dfB,
                       text_gen_port_num = 8081,
                       save_embeddings = FALSE,
                       just_embeddings = FALSE,
-                      provided_embeddings = NULL,
-                      debug = FALSE){
+                      provided_embeddings = NULL){
 
   # Check for errors in inputs
-  if(debug){
-    print("DEBUG: Beginning to check for errors in inputs")
-  }
 
   if(is.null(dfA[[by]])){
     stop("There is no variable called \'", by, "\' in dfA.")
@@ -85,15 +80,8 @@ fuzzylink <- function(dfA, dfB,
     warning('Dropping ', missing_dfB, ' observation(s) with missing values from dfB.')
     dfB <- dfB[stats::complete.cases(dfB[, c(by,blocking.variables), drop = FALSE]), ]
   }
- 
- if(debug){
-    print("DEBUG: No errors found in inputs")
-  }
 
   ## Step 0: Blocking -----------------
-  if(debug){
-    print("DEBUG: BEGINNING STEP 0: BLOCKING ----------------------------------------------")
-  }
 
   if(!is.null(blocking.variables)){
 
@@ -116,9 +104,6 @@ fuzzylink <- function(dfA, dfB,
 
   if(is.null(provided_embeddings)) {
     print("calculating embeddings")
-    if(debug){
-      print("DEBUG: BEGINNING STEP 1: GETTING EMBEDDINGS ------------------------------------")
-    }
 
     all_strings <- unique(c(dfA[[by]], dfB[[by]]))
     if(verbose){
@@ -133,8 +118,7 @@ fuzzylink <- function(dfA, dfB,
                                 dimensions = embedding_dimensions,
                                 openai_api_key = openai_api_key,
                                 parallel = parallel,
-                                port_number = embedding_port_num,
-                                debug = debug)
+                                port_number = embedding_port_num)
 
     if(save_embeddings) {
       current_directory <- getwd()
@@ -150,9 +134,6 @@ fuzzylink <- function(dfA, dfB,
     embeddings <- provided_embeddings
   }
   ## Step 2: Get similarity matrix within each block ------------
-  if(debug){
-    print("DEBUG: BEGINNING STEP 2: GETTING SIMILARITY MATRICES ---------------------------")
-  }
 
   if(verbose){
     message('Computing similarity matrix (',
@@ -204,9 +185,6 @@ fuzzylink <- function(dfA, dfB,
   }
 
   ## Step 3: Label Training Set -------------
-  if(debug){
-    print("DEBUG: BEGINNING STEP 3: LABELLING TRAINING SET --------------------------------")
-  }
 
   if(verbose){
     message('Labeling Initial Training Set (',
@@ -266,16 +244,6 @@ fuzzylink <- function(dfA, dfB,
     dplyr::slice_sample(n = n_t) |>
     dplyr::pull(index)
 
-    if (debug) {
-      print("train$match originally:")
-      print( "The unique values in the table: ")
-      print(unique(train$match))
-      print("count occurances:")
-      print(train$match, useNA = "ifany")
-      print("structure:")
-      print(str(train$match))
-    }
-
   train$match[pairs_to_label] <- check_match(
     train$A[pairs_to_label],
     train$B[pairs_to_label],
@@ -284,19 +252,8 @@ fuzzylink <- function(dfA, dfB,
     model = model,
     openai_api_key = openai_api_key,
     parallel = parallel,
-    port_number = text_gen_port_num,
-    debug = debug
-  )
+    port_number = text_gen_port_num)
 
-  if (debug) {
-      print("train$match sfter check_match:")
-      print( "The unique values in the table: ")
-      print(unique(train$match))
-      print("count occurances:")
-      print(train$match, useNA = "ifany")
-      print("structure:")
-      print(str(train$match))
-    }
 
   # train <- get_training_set(sim, record_type = record_type,
   #                           instructions = instructions,
@@ -304,41 +261,21 @@ fuzzylink <- function(dfA, dfB,
   #                           parallel = parallel)
 
   ## Step 4: Fit model -------------------
-  if(debug){
-    print("DEBUG: BEGINNING STEP 4: FITTING MODEL -----------------------------------------")
-  }
 
   
   if(verbose){
-    if(debug){
-      print("DEBUG: verbose")
-    }
     message('Fitting model (',
         format(Sys.time(), '%X'),
         ')\n\n', sep = '')
   }
   
   if(learner == 'ranger'){
-    if(debug){
-      print("DEBUG: learner == ranger")
-    }
     fit <- ranger::ranger(x = train |>
                             dplyr::filter(match %in% c('Yes', 'No')) |>
                             dplyr::select(sim, jw:soundex),
                           y = factor(train$match[train$match %in% c('Yes', 'No')]),
                           probability = TRUE)
   } else{
-    if(debug){
-      print("DEBUG: learner != ranger")
-    }
-    if (debug) {
-      print( "The unique values in the table: ")
-      print(unique(train$match))
-      print("count occurances:")
-      print(train$match, useNA = "ifany")
-      print("structure:")
-      print(str(train$match))
-    }
 
     fit <- stats::glm(fmla,
                       data = train |>
@@ -350,9 +287,6 @@ fuzzylink <- function(dfA, dfB,
 
 
   # Step 5: Active Learning Loop ---------------
-  if(debug){
-    print("DEBUG: BEGINNING STEP 5: ACTIVE LEARNING LOOP --------------------------------------")
-  }
 
   i <- 1
   window_size <- 5
@@ -403,8 +337,7 @@ fuzzylink <- function(dfA, dfB,
       model = model,
       openai_api_key = openai_api_key,
       parallel = parallel,
-      port_number = text_gen_port_num,
-      debug = debug
+      port_number = text_gen_port_num
     )
 
     # refit the model and re-estimate match probabilities
@@ -441,9 +374,6 @@ fuzzylink <- function(dfA, dfB,
   }
 
   ## Step 6: Recall Search -----------------
-  if(debug){
-    print("DEBUG: BEGINNING STEP 6: RECALL SEARCH -----------------------------------------")
-  }
 
   # 1. Identify records in A without in-block matches from B
   # 2. Sample from kernel in batches of 100; label but do not update model.
@@ -546,8 +476,7 @@ fuzzylink <- function(dfA, dfB,
       model = model,
       openai_api_key = openai_api_key,
       parallel = parallel,
-      port_number = text_gen_port_num,
-      debug = debug
+      port_number = text_gen_port_num
     )
 
     # merge into df, updating match values where they differ
@@ -566,9 +495,6 @@ fuzzylink <- function(dfA, dfB,
   }
 
   ## Step 7: Return Linked Datasets -----------------
-  if(debug){
-    print("DEBUG: BEGINNING STEP 7: RETURNING LINKED DATASETS -----------------------------------------")
-  }
 
   # if blocking, merge with the blocking variables prior to linking
   if(!is.null(blocking.variables)){
@@ -596,10 +522,6 @@ fuzzylink <- function(dfA, dfB,
     message('Done! (',
         format(Sys.time(), '%X'),
         ')\n', sep = '')
-  }
-
-  if(debug){
-    print("DEBUG: FUZZYLINK METHOD COMPLETE. RETURNING -------------------------------------------------------")
   }
 
   return(df)
