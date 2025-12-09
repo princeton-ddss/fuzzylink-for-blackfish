@@ -25,7 +25,7 @@ fuzzylink(
   text_gen_port_num = 8081,
   save_embeddings = FALSE,
   just_embeddings = FALSE,
-  debug = FALSE
+  provided_embeddings = NULL
 )
 }
 \arguments{
@@ -67,7 +67,7 @@ fuzzylink(
 
 \item{just_embeddings}{TRUE to quit running the code after aquiring the embeddings. Defaults to FALSE}
 
-\item{debug}{TRUE to print various statments throughout the code to track progess. Defaults to FALSE.}
+\item{provided_embeddings}{The embeddings df if using previously computed embeddings. If NULL, embeddings will be calculated}
 }
 \value{
 A dataframe with all rows of \code{dfA} joined with any matches from \code{dfB}

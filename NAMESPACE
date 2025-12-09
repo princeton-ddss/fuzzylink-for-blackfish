@@ -3,7 +3,6 @@
 export(check_match)
 export(dot)
 export(fuzzylink)
-export(fuzzylink_with_embeddings)
 export(get_embeddings)
 export(get_similarity_matrix)
 export(mistral_api_key)

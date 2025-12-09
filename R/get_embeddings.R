@@ -9,7 +9,6 @@
 #' @param openai_api_key Your OpenAI API key. By default, looks for a system environment variable called "OPENAI_API_KEY".
 #' @param parallel TRUE to submit API requests in parallel. Setting to FALSE can reduce rate limit errors at the expense of longer runtime.
 #' @param port_number The port number that the local embedding model is running on. Defaults to 8080. 
-#' @param debug TRUE to print various statments throughout the code to track progess. Defaults to FALSE.
 #' 
 #'
 #' @return A matrix of embedding vectors (one per row).
@@ -26,21 +25,13 @@ get_embeddings <- function(text,
                            dimensions = 256,
                            openai_api_key = Sys.getenv("OPENAI_API_KEY"),
                            parallel = TRUE,
-                           port_number = 8080,
-                           debug = FALSE) {
+                           port_number = 8080) {
 
-  if(debug){
-    print("DEBUG: get_embeddings function started")
-  }
 
   if (model== "EMPTY") {
-    if(debug){
-      print("DEBUG: running embedding model locally")
-    }
+    
     local_url <- paste("http://localhost:", port_number, "/v1/embeddings", sep = "")
-    if(debug){
-      print(paste("DEBUG: local url:", local_url))
-    }
+    
 
     # format an API request to embeddings endpoint
     format_request <- function(chunk, base_url = local_url) {
@@ -88,16 +79,8 @@ get_embeddings <- function(text,
     chunks <- split(text, split_indices)
 
 
-
-
-
-
-
-
   } else if (model == 'mistral-embed') {
-    if(debug){
-      print("DEBUG: minstral embedding model detected")
-    }
+    
     if (Sys.getenv('MISTRAL_API_KEY') == '') {
       stop("No API key detected in system environment. Add to Renviron as MISTRAL_API_KEY.")
     }
@@ -132,9 +115,7 @@ get_embeddings <- function(text,
     chunks <- split(text, split_indices)
 
   } else {
-    if(debug){
-      print("DEBUG: openai embedding model detected")
-    }
+    
     if (openai_api_key == '') {
       stop("No API key detected. Set OPENAI_API_KEY in .Renviron or pass as argument.")
     }
@@ -253,10 +234,6 @@ get_embeddings <- function(text,
       do.call(rbind, x))
   embeddings <- do.call(rbind, embeddings)
   rownames(embeddings) <- text
-
-  if(debug){
-    print("DEBUG: get_embeddings function completed. Returning")
-  }
 
   return(embeddings)
 }

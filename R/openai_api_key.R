@@ -10,8 +10,7 @@
 #' @importFrom utils write.table read.table
 #'
 #' @return No return value, called for side effects.
-#' @export
-#' 
+#'
 #' @examples
 #'
 #' \dontrun{
