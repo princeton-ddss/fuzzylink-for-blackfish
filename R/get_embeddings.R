@@ -27,12 +27,11 @@ get_embeddings <- function(text,
                            parallel = TRUE,
                            port_number = 8080) {
 
-
-  if (model== "EMPTY") {
+  ## USING LOCAL MODEL ---------------------------------------------------------------------------------------
+  if (model == "EMPTY") {
     
     local_url <- paste("http://localhost:", port_number, "/v1/embeddings", sep = "")
     
-
     # format an API request to embeddings endpoint
     format_request <- function(chunk, base_url = local_url) {
 
@@ -79,6 +78,7 @@ get_embeddings <- function(text,
     chunks <- split(text, split_indices)
 
 
+  ## USING MISTRAL MODEL ---------------------------------------------------------------------------------------
   } else if (model == 'mistral-embed') {
     
     if (Sys.getenv('MISTRAL_API_KEY') == '') {
@@ -114,40 +114,59 @@ get_embeddings <- function(text,
     # Split the vector based on the calculated indices
     chunks <- split(text, split_indices)
 
+
+  ## USING GOOGLE MODEL ---------------------------------------------------------------------------------------
+  } else if (model == 'gemini-embedding-001') {
+    print("starting gemini")
+    if (openai_api_key == '') { #using openAI api key for convinivnece. should be updated
+      stop("No API key detected for google model.")
+    }
+
+    # function to format an API request
+    format_gemini_request <- function(chunk,
+                                      base_url = "https://generativelanguage.googleapis.com/v1/models/embedding-001:embedContent") {
+
+      httr2::request(base_url) |>
+        httr2::req_url_query(key = openai_api_key) |>  
+        httr2::req_headers(
+          "Content-Type" = "application/json"
+        ) |>
+        httr2::req_body_json(list(
+          model = "gemini-embedding-001",
+          content = list(
+            text = chunk
+          )
+        ))
+    }
+    print("formatting done")
+    # requests per minute
+    rpm <- 6 * 60
+    # max tokens per request
+    tpr <- 8192
+    # max characters per chunk is approximately max tokens times 2 (*very* conservative)
+    max_characters <- tpr * 2
+    # Calculate cumulative sum of character lengths
+    cumulative_length <- cumsum(nchar(text))
+    # Find the indices where to split
+    split_indices <- cumulative_length %/% max_characters
+    # Split the vector based on the calculated indices
+    chunks <- split(text, split_indices)
+
+  ## USING OPENAI MODEL ---------------------------------------------------------------------------------------
   } else {
     
     if (openai_api_key == '') {
       stop("No API key detected. Set OPENAI_API_KEY in .Renviron or pass as argument.")
     }
 
-    # is_project_scoped <- function(key) {
-    #   grepl("^sk-proj-", key)
-    # }
-    #
-    # get_project_id <- function(api_key) {
-    #   if (!is_project_scoped(api_key))
-    #     return(NULL)
-    #   project_id <- Sys.getenv("OPENAI_PROJECT_ID")
-    #   if (project_id == "") {
-    #     stop(
-    #       "You are using a project-scoped key (sk-proj-...), but OPENAI_PROJECT_ID is not set.\n\nAdd this line to your .Renviron:\nOPENAI_PROJECT_ID=project_xxxxxx\n"
-    #     )
-    #   }
-    #   return(project_id)
-    # }
-
     # format an API request to embeddings endpoint
     format_request <- function(chunk, base_url = "https://api.openai.com/v1/embeddings") {
-      # project_id <- get_project_id(openai_api_key)
 
       # ⚠️ Use a named character vector to avoid collapsing
       headers <- c(
         "Authorization" = paste("Bearer", openai_api_key),
         "Content-Type" = "application/json"
       )
-      # if (!is.null(project_id)) {
-      #   headers["OpenAI-Project"] <- project_id
-      # }
 
       httr2::request(base_url) |>
         # headers
@@ -190,11 +209,25 @@ get_embeddings <- function(text,
   # format list of requests
   if(model == 'mistral-embed'){
     reqs <- lapply(chunks, format_mistral_request)
-  } else{
+  } else if(model == 'gemini-embedding-001') {
+    print("startin 2")
+    chunks <- lapply(chunks, paste, collapse = "\n")
+    print(chunks[[1]])
+    reqs <- lapply(chunks, format_gemini_request)
+    # reqs <- format_gemini_request(chunks[[1]])
+    print(table(vapply(reqs, class, character(1))))
+    print(reqs)
+  } else {
     reqs <- lapply(chunks, format_request)
   }
 
   # perform requests
+  # if(model == 'gemini-embedding-001') {
+  #   print("failed")
+  #   resps <- httr2::req_perform_parallel(reqs, max_active = 20)
+  #   print("passed")
+  # } else 
+  
   if (parallel & model != 'mistral-embed') {
     # submit prompts in parallel (20 concurrent requests per host seems to be the optimum)
     resps <- httr2::req_perform_parallel(reqs, max_active = 20, on_error = 'continue')

@@ -32,11 +32,11 @@ check_match <- function(string1, string2,
     stop('Inputs must have the same number of elements.')
   }
 
-  if(openai_api_key == ''){
-    if(model != "EMPTY") {
-      stop("No API key for model detected in system environment. You can enter it manually using the 'openai_api_key' argument.")
-    }
-  }
+  # if(openai_api_key == ''){
+  #   if(model != "EMPTY") {
+  #     stop("No API key for model detected in system environment. You can enter it manually using the 'openai_api_key' argument.")
+  #   }
+  # }
 
   # if non-NULL, pad the instructions
   if(!is.null(instructions)){
@@ -47,10 +47,19 @@ check_match <- function(string1, string2,
   string1 <- as.character(string1)
   string2 <- as.character(string2)
 
+  if(model %in% c("gemini-3-pro-preview", "gemini-2.0-flash-lite", "gemini-2.0-flash-001")) {
+    chat <- ellmer::chat_google_gemini(system_prompt='Respond with "Yes" or "No".',
+                                model = model)
+
+    prompts <- ellmer::interpolate('Decide if the following two names refer to the same {{record_type}}. {{instructions}}\n\nName A: {{string1}}\nName B: {{string2}}')
+
+    labels <- ellmer::parallel_chat_text(chat, prompts)
+
+    return(labels)
 
 
-  # use the Completions endpoint if the model is a "Legacy" model
-  if(model %in% c('gpt-3.5-turbo-instruct', 'davinci-002', 'babbage-002')){
+  } else if(model %in% c('gpt-3.5-turbo-instruct', 'davinci-002', 'babbage-002')){  # use the Completions endpoint if the model is a "Legacy" model
+
 
     # format the prompt
     p <- paste0('Decide if the following two names refer to the same ',
@@ -190,7 +199,7 @@ check_match <- function(string1, string2,
           # body
           httr2::req_body_json(list(model = model,
                                     messages = prompt))
-      } else{
+      } else {
         httr2::request(base_url) |>
           # headers
           httr2::req_headers('Authorization' = paste("Bearer", api_key)) |>
@@ -238,7 +247,7 @@ check_match <- function(string1, string2,
 
     # submit prompts in parallel (20 concurrent requests per host seems to be the optimum)
     if(parallel & stringr::str_detect(model, 'mistral|mixtral', negate = TRUE)){
-      resps <- httr2::req_perform_parallel(reqs, max_active = 2)
+      resps <- httr2::req_perform_parallel(reqs, max_active = 1)
     } else{
       resps <- reqs |>
         lapply(httr2::req_throttle, rate = rpm / 60) |>
