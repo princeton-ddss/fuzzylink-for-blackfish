@@ -62,14 +62,14 @@ fuzzylink <- function(dfA, dfB,
   if(is.null(dfB[[by]])){
     stop("There is no variable called \'", by, "\' in dfB.")
   }
-  if(openai_api_key == ''){
-    if(model != "EMPTY") {
-      stop("No API key for model detected in system environment. You can enter it manually using the 'openai_api_key' argument.")
-    }
-    if(embedding_model != "EMPTY") {
-      stop("No API key for embedding detected in system environment. You can enter it manually using the 'openai_api_key' argument.")
-    }
-  }
+  # if(openai_api_key == ''){
+  #   if(model != "EMPTY") {
+  #     stop("No API key for model detected in system environment. You can enter it manually using the 'openai_api_key' argument.")
+  #   }
+  #   if(embedding_model != "EMPTY") {
+  #     stop("No API key for embedding detected in system environment. You can enter it manually using the 'openai_api_key' argument.")
+  #   }
+  # }
   missing_dfA <- sum(!stats::complete.cases(dfA[,c(by, blocking.variables), drop = FALSE]))
   if(missing_dfA > 0){
     warning('Dropping ', missing_dfA, ' observation(s) with missing values from dfA.')

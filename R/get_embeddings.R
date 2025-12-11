@@ -103,7 +103,8 @@ get_embeddings <- function(text,
     rpm <- 6 * 60
 
     # max tokens per request
-    tpr <- 8192
+    tpr <- 1500
+    
     # max characters per chunk is approximately max tokens times 2 (*very* conservative)
     max_characters <- tpr * 2
 
@@ -113,28 +114,13 @@ get_embeddings <- function(text,
     split_indices <- cumulative_length %/% max_characters
     # Split the vector based on the calculated indices
     chunks <- split(text, split_indices)
+    print(length(chunks))
 
   } else {
     
     if (openai_api_key == '') {
       stop("No API key detected. Set OPENAI_API_KEY in .Renviron or pass as argument.")
     }
-
-    # is_project_scoped <- function(key) {
-    #   grepl("^sk-proj-", key)
-    # }
-    #
-    # get_project_id <- function(api_key) {
-    #   if (!is_project_scoped(api_key))
-    #     return(NULL)
-    #   project_id <- Sys.getenv("OPENAI_PROJECT_ID")
-    #   if (project_id == "") {
-    #     stop(
-    #       "You are using a project-scoped key (sk-proj-...), but OPENAI_PROJECT_ID is not set.\n\nAdd this line to your .Renviron:\nOPENAI_PROJECT_ID=project_xxxxxx\n"
-    #     )
-    #   }
-    #   return(project_id)
-    # }
 
     # format an API request to embeddings endpoint
     format_request <- function(chunk, base_url = "https://api.openai.com/v1/embeddings") {
@@ -190,6 +176,7 @@ get_embeddings <- function(text,
   # format list of requests
   if(model == 'mistral-embed'){
     reqs <- lapply(chunks, format_mistral_request)
+    
   } else{
     reqs <- lapply(chunks, format_request)
   }
@@ -199,7 +186,7 @@ get_embeddings <- function(text,
     # submit prompts in parallel (20 concurrent requests per host seems to be the optimum)
     resps <- httr2::req_perform_parallel(reqs, max_active = 20, on_error = 'continue')
   } else {
-    resps <- lapply(reqs, httr2::req_throttle, rate = rpm / 60) |>
+    resps <- lapply(reqs, httr2::req_throttle, rate = rpm / 60) |> 
       httr2::req_perform_sequential()
   }
 
