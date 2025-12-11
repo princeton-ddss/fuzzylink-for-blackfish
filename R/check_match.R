@@ -182,7 +182,7 @@ check_match <- function(string1, string2,
       }
 
       # o3 models do not accept logprobs or temperature headers
-      if(model %in% c('o3-mini', 'o1', 'o1-mini')){
+      if(model %in% c('o3-mini', 'o1', 'o1-mini', 'open-mixtral-8x22b')){
         httr2::request(base_url) |>
           # headers
           httr2::req_headers('Authorization' = paste("Bearer", api_key)) |>
@@ -237,7 +237,8 @@ check_match <- function(string1, string2,
     # 3. combine the response lists
 
     # submit prompts in parallel (20 concurrent requests per host seems to be the optimum)
-    if(parallel & stringr::str_detect(model, 'mistral|mixtral', negate = TRUE)){
+    # if(parallel & stringr::str_detect(model, 'mistral|mixtral', negate = TRUE)){
+    if(parallel){
       resps <- httr2::req_perform_parallel(reqs, max_active = 1)
     } else{
       resps <- reqs |>
@@ -251,7 +252,7 @@ check_match <- function(string1, string2,
       lapply(jsonlite::fromJSON, flatten=TRUE)
 
     # get the labels associated with the highest returned log probability
-    if(model %in% c('o3-mini', 'o1', 'o1-mini')){
+    if(model %in% c('o3-mini', 'o1', 'o1-mini', 'open-mixtral-8x22b')){
       labels <- sapply(parsed, function(x) x$choices$message.content)
     } else{
       labels <- sapply(parsed, function(x) x$choices$logprobs.content[[1]]$top_logprobs[[1]][1,]$token)
