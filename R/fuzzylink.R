@@ -135,7 +135,7 @@ fuzzylink <- function(dfA, dfB,
   }
 
   embeddings = sweep(embeddings, MARGIN = 1, sqrt(rowSums(embeddings^2)), FUN = "/")
-  
+
   ## Step 2: Get similarity matrix within each block ------------
 
   if(verbose){
